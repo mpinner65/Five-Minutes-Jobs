@@ -1,17 +1,64 @@
 import SwiftUI
-import Playgrounds
 
 struct ContentView: View {
+
     var body: some View {
-        Text("Hello, world!")
-            .padding()
+
+        TabView {
+
+            // MARK: - Today
+
+            NavigationStack {
+                TodayView()
+            }
+            .tabItem {
+                Label(
+                    "Today",
+                    systemImage: "bolt.fill"
+                )
+            }
+
+            // MARK: - Jobs
+
+            NavigationStack {
+                JobsView()
+            }
+            .tabItem {
+                Label(
+                    "Jobs",
+                    systemImage: "checklist"
+                )
+            }
+
+            // MARK: - Progress
+
+            NavigationStack {
+                JobProgressView()
+            }
+            .tabItem {
+                Label(
+                    "Progress",
+                    systemImage: "chart.bar.fill"
+                )
+            }
+
+            // MARK: - Settings
+
+            NavigationStack {
+                SettingsView()
+            }
+            .tabItem {
+                Label(
+                    "Settings",
+                    systemImage: "gearshape.fill"
+                )
+            }
+        }
     }
 }
 
-#Preview {
-    ContentView()
-}
+// MARK: - Preview
 
-#Playground {
-    _ = 1 + 2
+#Preview {     
+    ContentView()
 }
