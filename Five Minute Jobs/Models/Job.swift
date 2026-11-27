@@ -26,6 +26,17 @@ final class Job {
     var isArchived: Bool
     var isFavourite: Bool
 
+    // Additive optional fields let existing stores migrate without losing jobs.
+    var featureID: UUID?
+    var effortValue: String?
+    var roomValue: String?
+    var nextStep: String?
+    var pausedAt: Date?
+
+    var effort: JobEffort { JobEffort(rawValue: effortValue ?? "") ?? .moderate }
+    var room: String { roomValue ?? "Unassigned" }
+    var resumeStep: String { nextStep?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+
     // MARK: - Init
 
     init(

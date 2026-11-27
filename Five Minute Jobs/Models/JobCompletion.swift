@@ -8,7 +8,7 @@ final class JobCompletion {
     var category: String
     var estimatedMinutes: Int
     var completedAt: Date
-
+ 
     init(
         jobTitle: String,
         category: String,

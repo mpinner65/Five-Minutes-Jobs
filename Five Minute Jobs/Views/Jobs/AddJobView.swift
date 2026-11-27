@@ -12,6 +12,9 @@ struct AddJobView: View {
     @State private var repeatType = JobRepeat.once.rawValue
     @State private var notes = ""
 
+    @State private var effortValue = JobEffort.moderate.rawValue
+    @State private var room = "Unassigned"
+
     @State private var isSaving = false
     @State private var saveError: String?
 
@@ -46,6 +49,23 @@ struct AddJobView: View {
 
     var body: some View {
         Form {
+            Section {
+                Menu("Choose a quick-add template") {
+                    ForEach(JobTemplate.all) { template in
+                        Button(template.title) {
+                            title = template.title
+                            estimatedMinutes = template.minutes
+                            categoryName = template.category
+                            repeatType = template.repeatType
+                            room = template.room
+                            effortValue = template.effort.rawValue
+                        }
+                    }
+                }
+            } header: { Text("Quick Add") } footer: {
+                Text("Templates fill the form. Review or change any detail before saving.")
+            }
+
             Section {
                 TextField("What needs doing?", text: $title)
                     .textInputAutocapitalization(.sentences)
@@ -112,6 +132,14 @@ struct AddJobView: View {
                 Text("Higher priority jobs are more likely to be picked.")
             }
 
+            Section("Energy and Room") {
+                Picker("Effort", selection: $effortValue) {
+                    ForEach(JobEffort.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                }
+                Picker("Room", selection: $room) {
+                    ForEach(JobRooms.all, id: \.self) { Text($0).tag($0) }
+                }
+            }
             Section("Notes") {
                 TextField("Optional notes", text: $notes, axis: .vertical)
                     .lineLimit(3...6)
@@ -160,6 +188,9 @@ struct AddJobView: View {
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines),
             repeatType: repeatType
         )
+        newJob.featureID = UUID()
+        newJob.effortValue = effortValue
+        newJob.roomValue = room
         modelContext.insert(newJob)
 
         do {

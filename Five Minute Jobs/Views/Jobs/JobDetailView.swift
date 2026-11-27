@@ -7,6 +7,7 @@ struct JobDetailView: View {
 
     let job: Job
 
+    @State private var showingPauseJob = false
     @State private var showingEditJob = false
     @State private var activeAlert: DetailAlert?
     @State private var isCompletingJob = false
@@ -49,7 +50,15 @@ struct JobDetailView: View {
                 Text(completionExplanation)
             }
 
+            if job.isAvailable {
+                Section("Pick Up Where You Left Off") {
+                    if !job.resumeStep.isEmpty { Label(job.resumeStep, systemImage: "arrow.turn.down.right") }
+                    Button(job.pausedAt == nil ? "Save a Next Step" : "Update Next Step") { showingPauseJob = true }
+                }
+            }
             Section("Details") {
+                LabeledContent("Effort", value: job.effort.rawValue)
+                LabeledContent("Room", value: job.room)
                 LabeledContent("Time", value: "\(job.estimatedMinutes) minutes")
                 LabeledContent("Category", value: job.category)
                 LabeledContent("Priority", value: priorityName)
@@ -114,6 +123,9 @@ struct JobDetailView: View {
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showingEditJob = true }
             }
+        }
+        .sheet(isPresented: $showingPauseJob) {
+            NavigationStack { PauseJobView(job: job) }
         }
         .sheet(isPresented: $showingEditJob) {
             NavigationStack { EditJobView(job: job) }
@@ -238,6 +250,8 @@ struct JobDetailView: View {
         )
         modelContext.insert(completion)
         job.lastCompletedAt = completedAt
+        job.nextStep = nil
+        job.pausedAt = nil
         // Match the app's existing Today screen behaviour.
         if job.repeatRule == .once { job.isArchived = true }
 

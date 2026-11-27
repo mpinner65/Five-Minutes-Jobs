@@ -25,6 +25,9 @@ struct TodayView: View {
     @AppStorage("notificationsEnabled") private var notificationsEnabled = false
     @AppStorage("reminderHour") private var reminderHour = 18
     @AppStorage("reminderMinute") private var reminderMinute = 0
+    @AppStorage("lowEnergyMode") private var lowEnergyMode = false
+    @AppStorage("suggestionRoom") private var suggestionRoom = ""
+    @State private var pauseJob: Job?
     @State private var selectedMinutes = 5
     @State private var hasAppliedDefaultTime = false
 
@@ -38,32 +41,23 @@ struct TodayView: View {
         // Refresh due-time and day-boundary summaries even when no model is edited.
         TimelineView(.periodic(from: .now, by: 60)) { _ in
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 20) {
                     header
-                    DailyGoalCard(
-                        completedToday: completedTodayCount,
-                        dailyGoal: effectiveDailyGoal,
-                        currentStreak: currentStreak
-                    )
-                    TodayStatsCard(
-                        readyCount: readyJobs.count,
-                        overdueCount: overdueJobs.count,
-                        completedTodayCount: completedTodayCount,
-                        onReadyTap: { activeSheet = .ready },
-                        onOverdueTap: { activeSheet = .overdue },
-                        onCompletedTap: { activeSheet = .completed }
-                    )
-                    timeSelector
-                    availabilitySummary
-                    if !showingJobCompleted { giveMeAJobButton }
+                    selectionCard
                     resultSection
+                    resumeSection
+                    compactProgress
                 }
                 .frame(maxWidth: 700, alignment: .leading)
-                .padding()
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
         }
         .navigationTitle("Today")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(Color(uiColor: .systemGroupedBackground))
         .onAppear {
             if !hasAppliedDefaultTime {
                 selectedMinutes = max(1, defaultJobMinutes)
@@ -71,6 +65,9 @@ struct TodayView: View {
             }
         }
         .task { await refreshSmartReminder() }
+        .onChange(of: lowEnergyMode) { _, _ in resetCurrentResult() }
+        .onChange(of: suggestionRoom) { _, _ in resetCurrentResult() }
+        .sheet(item: $pauseJob) { job in NavigationStack { PauseJobView(job: job) } }
         .onChange(of: disabledCategoriesData) { _, _ in resetCurrentResult() }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -91,47 +88,169 @@ struct TodayView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Five Minute Jobs").font(.largeTitle.bold())
-            Text("How much time do you have?")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-            Text("\(completedTodayCount) completed · \(completedTodayMinutes) estimated min today")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    private var selectionCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label("How much time do you have?", systemImage: "clock")
+                .font(.headline)
+            timeSelector
+            suggestionControls
+            Divider()
+            availabilitySummary
+            if !showingJobCompleted { giveMeAJobButton }
+        }
+        .padding(18)
+        .background(Color(uiColor: .secondarySystemGroupedBackground),
+                    in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    private var suggestionControls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { energyControl; roomControl }
+            VStack(alignment: .leading, spacing: 10) { energyControl; roomControl }
+        }
+        .disabled(isCompletingJob)
+    }
+
+    private var energyControl: some View {
+        Button { lowEnergyMode.toggle() } label: {
+            Label("Low energy", systemImage: lowEnergyMode ? "leaf.fill" : "leaf")
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
+                .background(lowEnergyMode ? Color.green.opacity(0.16) : Color.secondary.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(lowEnergyMode ? Color.green : Color.primary)
+        .accessibilityLabel("Low energy, easy jobs only")
+        .accessibilityValue(lowEnergyMode ? "On" : "Off")
+        .accessibilityAddTraits(lowEnergyMode ? .isSelected : [])
+    }
+
+    private var roomControl: some View {
+        Menu {
+            Picker("Room", selection: $suggestionRoom) {
+                Text("Any Room").tag("")
+                ForEach(JobRooms.all, id: \.self) { Text($0).tag($0) }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "house")
+                Text(suggestionRoom.isEmpty ? "Any Room" : suggestionRoom)
+                Image(systemName: "chevron.down").font(.caption2.bold())
+            }
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(Color.secondary.opacity(0.10), in: Capsule())
+        }
+        .foregroundStyle(.primary)
+        .accessibilityLabel("Filter room")
+        .accessibilityValue(suggestionRoom.isEmpty ? "Any Room" : suggestionRoom)
+    }
+
+    private var compactProgress: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Your small wins").font(.headline)
+                Spacer()
+                Label("\(currentStreak)", systemImage: "flame.fill")
+                    .font(.subheadline.bold()).foregroundStyle(.orange)
+                    .accessibilityLabel("Current streak: \(currentStreak) days")
+            }
+            Text("\(completedTodayCount) of \(effectiveDailyGoal) jobs today · \(completedTodayMinutes) estimated min")
+                .font(.subheadline).foregroundStyle(.secondary)
+            ProgressView(value: min(Double(completedTodayCount) / Double(effectiveDailyGoal), 1))
+                .tint(completedTodayCount >= effectiveDailyGoal ? .green : .accentColor)
+                .accessibilityLabel("Daily goal")
+                .accessibilityValue("\(completedTodayCount) of \(effectiveDailyGoal) jobs")
+            HStack(spacing: 8) {
+                summaryButton("Ready", count: readyJobs.count, icon: "bolt.fill", color: .accentColor) { activeSheet = .ready }
+                summaryButton("Overdue", count: overdueJobs.count, icon: "exclamationmark.circle", color: overdueJobs.isEmpty ? .secondary : .orange) { activeSheet = .overdue }
+                summaryButton("Done", count: completedTodayCount, icon: "checkmark.circle", color: .green) { activeSheet = .completed }
+            }
+        }
+        .padding(18)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    private func summaryButton(_ title: String, count: Int, icon: String, color: Color,
+                               action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                Label("\(count)", systemImage: icon).font(.headline).foregroundStyle(color)
+                Text(title).font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 58)
+            .padding(.vertical, 4)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(count) \(title)")
+    }
+
+    @ViewBuilder
+    private var resumeSection: some View {
+        let paused = availableJobs.filter { $0.pausedAt != nil && isEligible($0) }
+            .sorted { ($0.pausedAt ?? .distantPast) > ($1.pausedAt ?? .distantPast) }
+        if !paused.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Pick Up Where You Left Off").font(.headline)
+                ForEach(paused.prefix(3)) { job in
+                    Button {
+                        showingJobCompleted = false
+                        selectedJobID = job.persistentModelID
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(job.title).font(.headline)
+                            Text(job.resumeStep).font(.subheadline)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .padding()
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
         }
     }
 
+    private var header: some View {
+        VStack(spacing: 6) {
+            Text("Make a little progress.")
+                .font(.title2.bold())
+            Text("A few spare minutes can make a difference.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+    }
+
+    @ScaledMetric(relativeTo: .body) private var timeCellWidth = 64.0
+
     private var timeSelector: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(timeOptions, id: \.self) { minutes in
-                    TimeButton(minutes: minutes, isSelected: selectedMinutes == minutes) {
-                        selectedMinutes = minutes
-                        resetCurrentResult()
-                    }
-                    .accessibilityAddTraits(selectedMinutes == minutes ? .isSelected : [])
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: timeCellWidth), spacing: 10)], spacing: 10) {
+            ForEach(timeOptions, id: \.self) { minutes in
+                TimeButton(minutes: minutes, isSelected: selectedMinutes == minutes) {
+                    selectedMinutes = minutes
+                    resetCurrentResult()
                 }
+                .accessibilityLabel("\(minutes) minutes")
+                .accessibilityAddTraits(selectedMinutes == minutes ? .isSelected : [])
             }
-            .padding(.vertical, 2)
         }
         .disabled(isCompletingJob)
     }
 
     private var availabilitySummary: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(eligibleJobs.count == 1
-                 ? "1 job fits your \(selectedMinutes) minutes"
-                 : "\(eligibleJobs.count) jobs fit your \(selectedMinutes) minutes")
+        VStack(spacing: 5) {
+            Text(eligibleJobs.count == 1 ? "1 job fits your time" : "\(eligibleJobs.count) jobs fit your time")
                 .font(.subheadline.weight(.medium))
-            let overdueCount = eligibleJobs.filter { $0.isOverdue }.count
-            if overdueCount > 0 {
-                Label("\(overdueCount) overdue", systemImage: "exclamationmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+            if lowEnergyMode {
+                Text("Easy jobs only").font(.caption).foregroundStyle(.secondary)
             }
         }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
     }
 
     private var giveMeAJobButton: some View {
@@ -208,6 +327,8 @@ struct TodayView: View {
                     .padding(.vertical, 13)
             }
             .buttonStyle(.borderedProminent)
+            if !job.resumeStep.isEmpty { Label(job.resumeStep, systemImage: "arrow.turn.down.right") }
+            Button("Save Next Step for Later") { pauseJob = job }
             Button("Pick Another", action: pickJob).frame(maxWidth: .infinity)
         }
         .disabled(isCompletingJob)
@@ -249,6 +370,9 @@ struct TodayView: View {
     }
 
     private var noMatchingDescription: String {
+        if lowEnergyMode || !suggestionRoom.isEmpty {
+            return "No ready jobs match this time, energy and room. Try Any Room, turn off Low Energy, or add an Easy job using a quick-add template."
+        }
         if hasDisabledAvailableJobs && availableJobs.isEmpty {
             return "Available jobs are in categories you've turned off. Review your categories or add a new job."
         }
@@ -259,23 +383,12 @@ struct TodayView: View {
     }
 
     private var readyView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "clock.badge.questionmark")
-                .font(.system(size: 38))
-                .foregroundStyle(.secondary)
-            Text("Choose your time and we'll pick something.")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            let favourites = eligibleJobs.filter { $0.isFavourite }.count
-            if favourites > 0 {
-                Label(favourites == 1 ? "1 favourite job fits" : "\(favourites) favourite jobs fit",
-                      systemImage: "star.fill")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 30)
+        Label("Choose your time. We’ll find a small win.", systemImage: "sparkles")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
     }
 
     private var jobCompletedView: some View {
@@ -331,6 +444,8 @@ struct TodayView: View {
         job.isAvailable && !job.isArchived
             && job.estimatedMinutes <= selectedMinutes
             && !disabledCategories.contains(job.category)
+            && (!lowEnergyMode || job.effort == .easy)
+            && (suggestionRoom.isEmpty || job.room == suggestionRoom)
     }
 
     private func pickJob() {
@@ -342,7 +457,9 @@ struct TodayView: View {
             from: jobs,
             maximumMinutes: selectedMinutes,
             disabledCategories: disabledCategories,
-            excluding: previousJob
+            excluding: previousJob,
+            lowEnergy: lowEnergyMode,
+            room: suggestionRoom.isEmpty ? nil : suggestionRoom
         )?.persistentModelID
     }
 
@@ -377,6 +494,8 @@ struct TodayView: View {
         )
         modelContext.insert(completion)
         job.lastCompletedAt = completedAt
+        job.nextStep = nil
+        job.pausedAt = nil
         if job.repeatRule == .once { job.isArchived = true }
 
         do {
@@ -426,12 +545,13 @@ struct TodayView: View {
     }
     private var readyJobs: [Job] { availableJobs.filter { !$0.isOverdue } }
     private var overdueJobs: [Job] { availableJobs.filter { $0.isOverdue } }
-    private var eligibleJobs: [Job] { availableJobs.filter { $0.estimatedMinutes <= selectedMinutes } }
+    private var eligibleJobs: [Job] { availableJobs.filter { isEligible($0) } }
     private var hasDisabledAvailableJobs: Bool {
         jobs.contains { $0.isAvailable && !$0.isArchived && disabledCategories.contains($0.category) }
     }
     private var nextSuggestedMinutes: Int? {
-        availableJobs.map(\.estimatedMinutes).filter { $0 > selectedMinutes }.min()
+        availableJobs.filter { (!lowEnergyMode || $0.effort == .easy) && (suggestionRoom.isEmpty || $0.room == suggestionRoom) }
+            .map(\.estimatedMinutes).filter { $0 > selectedMinutes }.min()
     }
     private var completedToday: [JobCompletion] {
         completions.filter { Calendar.current.isDateInToday($0.completedAt) }

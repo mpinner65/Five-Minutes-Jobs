@@ -19,6 +19,8 @@ struct JobsView: View {
     // MARK: - State
 
     @State private var showingAddJob = false
+    @State private var selectedRoom = ""
+    @State private var easyOnly = false
     @State private var searchText = ""
     @State private var selectedSort: JobSortOrder = .recommended
     @State private var pendingDeletion: [Job] = []
@@ -267,6 +269,12 @@ struct JobsView: View {
             alignment: .leading,
             spacing: 14
         ) {
+
+            Toggle("Easy Jobs Only", isOn: $easyOnly)
+            Picker("Room", selection: $selectedRoom) {
+                Text("Any Room").tag("")
+                ForEach(JobRooms.all, id: \.self) { Text($0).tag($0) }
+            }
 
             // MARK: Status Filters
 
@@ -642,6 +650,8 @@ struct JobsView: View {
                     )
 
                 return
+                    (selectedRoom.isEmpty || job.room == selectedRoom) &&
+                    (!easyOnly || job.effort == .easy) &&
                     matchesSearch &&
                     matchesCategory &&
                     matchesStatus
@@ -771,6 +781,8 @@ struct JobsView: View {
                     )
 
             return
+                (selectedRoom.isEmpty || job.room == selectedRoom) &&
+                (!easyOnly || job.effort == .easy) &&
                 matchesCategory &&
                 matchesSearch &&
                 matches(
@@ -876,6 +888,7 @@ struct JobsView: View {
     private var filtersAreActive:
         Bool {
 
+        !selectedRoom.isEmpty || easyOnly ||
         !searchText.isEmpty ||
         selectedStatus != .all ||
         selectedCategory != nil
@@ -885,6 +898,8 @@ struct JobsView: View {
 
     private func clearFilters() {
 
+        selectedRoom = ""
+        easyOnly = false
         searchText = ""
         selectedStatus = .all
         selectedCategory = nil

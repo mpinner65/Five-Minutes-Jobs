@@ -9,7 +9,9 @@ struct JobPicker {
         from jobs: [Job],
         maximumMinutes: Int,
         disabledCategories: Set<String> = [],
-        excluding excludedJob: Job? = nil
+        excluding excludedJob: Job? = nil,
+        lowEnergy: Bool = false,
+        room: String? = nil
     ) -> Job? {
 
         var candidates =
@@ -18,6 +20,8 @@ struct JobPicker {
                 job.estimatedMinutes <=
                     maximumMinutes &&
 
+                (!lowEnergy || job.effort == .easy) &&
+                (room == nil || job.room == room) &&
                 job.isAvailable &&
 
                 !job.isArchived &&
@@ -52,7 +56,7 @@ struct JobPicker {
         let scoredJobs =
             candidates.map { job in
 
-                var score = 0
+                var score = job.pausedAt == nil ? 0 : 20
 
                 // MARK: Priority
 

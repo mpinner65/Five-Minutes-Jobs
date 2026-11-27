@@ -19,6 +19,7 @@ struct JobProgressView: View {
         TimelineView(.periodic(from: .now, by: 60)) { _ in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    WeeklyRecapCard(completions: completions)
                     summaryGrid
                     dailyGoalSummary
                     streakSummary

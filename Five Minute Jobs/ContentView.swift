@@ -1,10 +1,15 @@
 import SwiftUI
+import SwiftData
 
 struct ContentView: View {
 
+    @Query private var jobs: [Job]
+    @State private var linkedJob: Job?
+    @State private var selectedTab = 0
+
     var body: some View {
 
-        TabView {
+        TabView(selection: $selectedTab) {
 
             // MARK: - Today
 
@@ -18,6 +23,8 @@ struct ContentView: View {
                 )
             }
 
+            .tag(0)
+
             // MARK: - Jobs
 
             NavigationStack {
@@ -29,6 +36,8 @@ struct ContentView: View {
                     systemImage: "checklist"
                 )
             }
+
+            .tag(1)
 
             // MARK: - Progress
 
@@ -42,6 +51,8 @@ struct ContentView: View {
                 )
             }
 
+            .tag(2)
+
             // MARK: - Settings
 
             NavigationStack {
@@ -52,6 +63,21 @@ struct ContentView: View {
                     "Settings",
                     systemImage: "gearshape.fill"
                 )
+            }
+            .tag(3)
+        }
+        .background { WidgetSnapshotPublisher() }
+        .onOpenURL { url in
+            guard url.scheme == "fiveminutejobs" else { return }
+            selectedTab = 0
+            if url.host == "job", let id = UUID(uuidString: url.lastPathComponent) {
+                linkedJob = jobs.first { $0.featureID == id && !$0.isArchived && $0.isAvailable }
+            }
+        }
+        .sheet(item: $linkedJob) { job in
+            NavigationStack {
+                JobDetailView(job: job)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { linkedJob = nil } } }
             }
         }
     }

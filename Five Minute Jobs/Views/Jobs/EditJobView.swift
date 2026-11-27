@@ -23,7 +23,12 @@ struct EditJobView: View {
         _priority = State(initialValue: job.priority)
         _repeatType = State(initialValue: job.repeatType)
         _notes = State(initialValue: job.notes)
+        _effortValue = State(initialValue: job.effort.rawValue)
+        _room = State(initialValue: job.room)
     }
+
+    @State private var effortValue = JobEffort.moderate.rawValue
+    @State private var room = "Unassigned"
 
     @State private var isSaving = false
     @State private var saveError: String?
@@ -125,6 +130,14 @@ struct EditJobView: View {
                 Text("Higher priority jobs are more likely to be picked.")
             }
 
+            Section("Energy and Room") {
+                Picker("Effort", selection: $effortValue) {
+                    ForEach(JobEffort.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                }
+                Picker("Room", selection: $room) {
+                    ForEach(JobRooms.all, id: \.self) { Text($0).tag($0) }
+                }
+            }
             Section("Notes") {
                 TextField("Optional notes", text: $notes, axis: .vertical)
                     .lineLimit(3...6)
@@ -165,6 +178,8 @@ struct EditJobView: View {
             return
         }
 
+        job.effortValue = effortValue
+        job.roomValue = room
         job.title = cleanTitle
         job.estimatedMinutes = estimatedMinutes
         job.category = categoryName
